@@ -1,0 +1,9 @@
+
+Document A: Initial Status
+On 2023-01-01, Sarah Chen founded TechCorp in Seattle. The primary product was ProductX, and the initial funding came from VentureCapitalA.
+
+Document B: Status Change
+On 2024-03-15, TechCorp officially ended development of ProductX due to a market shift. They immediately launched a new, major initiative named Project Nova.
+
+Document C: Leadership Change
+As of 2025-02-10, Sarah Chen confirmed that she appointed Marcus Jones as the new CEO. Marcus Jones is a former executive at CompetitorZ.
