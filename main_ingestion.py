@@ -3,6 +3,7 @@ import os
 from dgar_core.db_connector import NEO4J_DB
 from dgar_core.db_connector import NEO4J_DB, Neo4jConnector
 from dgar_core.extractor import extract_triplets
+from dgar_core.validator import validate_triplet
 import os
 import re
 from datetime import datetime
@@ -62,7 +63,8 @@ def run_ingestion_pipeline():
     print(" Starting Neo4j Ingestion...")
     
     for t in triplets:
-        ingest_triplet(t)
+        if validate_triplet(t):
+            ingest_triplet(t)
 
     print("\n Phase 2: Ingestion complete! Graph is ready.")
 
