@@ -1,54 +1,48 @@
-from google import genai
-from google.genai import types
+import requests
 import json
-import os
-try:
-    CLIENT = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-except Exception as e:
-    print(f" GEMINI CLIENT ERROR: Could not initialize client. {e}")
-    CLIENT = None 
-def extract_triplets(text_chunk: str) -> list:
-    if CLIENT is None:
-        return []
-    
-    output_schema_instructions = """
-    [
-      {
-        "subject": "Entity name (e.g., Sarah Chen)",
-        "subject_type": "Label (e.g., Person, Company)",
-        "relationship": "Directed relationship (e.g., WORKS_AT, FOUNDED)",
-        "object": "Entity name or value (e.g., TechCorp, Seattle)",
-        "object_type": "Label (e.g., Company, Location)",
-        "timestamp": "YYYY-MM-DD"
-      }
-    ]
-    """
-    
-    system_prompt = (
-        "You are a meticulous knowledge graph extractor. "
-        "Your task is to analyze the text and extract all self-contained, directed, temporal facts. "
-        "The response MUST be a single, parsable JSON list adhering strictly to this schema: "
-        f"{output_schema_instructions}"
-        "Every fact MUST include a YYYY-MM-DD 'timestamp'. Do not include any explanations or commentary."
-    )
-    
-    try:
-        response = CLIENT.models.generate_content(
-            model='gemini-2.5-flash', # Fast, capable model
-            contents=[system_prompt, f"DOCUMENT: {text_chunk}"],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json", 
-            )
-        )
-        
-        raw_json_string = response.text.strip()
 
-        content = json.loads(raw_json_string)
-        
-        if isinstance(content, list):
-            return content
-        return content.get('triplets', content.get('facts', []))
-        
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL_NAME = "llama3.1"
+
+SYSTEM_PROMPT = """
+You are a knowledge graph extractor.
+Extract ONLY time-stamped, directed facts.
+Return STRICT JSON only. No explanations.
+
+Schema:
+[
+  {
+    "subject": "string",
+    "subject_type": "Person | Company | Product | Location | Other",
+    "relationship": "UPPERCASE_UNDERSCORE",
+    "object": "string",
+    "object_type": "Person | Company | Product | Location | Other",
+    "timestamp": "YYYY-MM-DD"
+  }
+]
+"""
+
+def extract_triplets(text: str) -> list:
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": f"{SYSTEM_PROMPT}\n\nDOCUMENT:\n{text}",
+        "stream": False
+    }
+
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        response.raise_for_status()
+
+        raw_output = response.json().get("response", "").strip()
+        if raw_output.startswith("```"):
+                raw_output = raw_output.strip("`")
+                if raw_output.lower().startswith("json"):
+                      raw_output = raw_output[4:].strip()
+        print("\n--- RAW LLM OUTPUT START ---")
+        print(raw_output)
+        print("--- RAW LLM OUTPUT END ---\n")
+        return json.loads(raw_output)
+
     except Exception as e:
-        print(f" GEMINI API CALL FAILED: {e}")
+        print(f"[Extractor Error] {e}")
         return []
