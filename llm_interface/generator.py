@@ -1,25 +1,37 @@
-def generate_grounded_response(G, entity, user_query, client: OpenAI):
+import requests
 
-    dgar_context = adaptive_temporal_replay(G, entity)
-    
-    if not dgar_context:
-        return "ERROR: Entity not found in the Knowledge Graph. Cannot ground response."
-        
-    augmented_prompt = f"""
-    You are an expert fact-checker. Use the following verified Knowledge Graph context 
-    to answer the user's question. Do not use any external knowledge. 
-    If the context is insufficient, state that clearly.
-    
-    --- KG CONTEXT ---
-    {dgar_context}
-    ---
-    
-    USER QUESTION: {user_query}
-    """
-    
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": augmented_prompt}]
-    )
-    
-    return response.choices[0].message.content
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL_NAME = "llama3.1"
+
+def generate_grounded_response(temporal_context: str, user_query: str) -> str:
+    if not temporal_context:
+        return "ERROR: No grounded context available to answer the question."
+
+    prompt = f"""
+You are a fact-checking assistant.
+
+RULES:
+- Use ONLY the information in the context below
+- Do NOT use prior knowledge
+- If the answer cannot be determined, say so clearly
+
+--- TEMPORAL KNOWLEDGE GRAPH CONTEXT ---
+{temporal_context}
+---
+
+QUESTION:
+{user_query}
+"""
+
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": prompt,
+        "stream": False
+    }
+
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        response.raise_for_status()
+        return response.json()["response"].strip()
+    except Exception as e:
+        return f"[Generation Error] {e}"
