@@ -12,7 +12,7 @@ load_dotenv()
 try:
     CLIENT = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 except Exception as e:
-    print(f"🔴 ERROR: Could not initialize Gemini Client. Details: {e}")
+    print(f" ERROR: Could not initialize Gemini Client. Details: {e}")
     CLIENT = None 
 
 def generate_grounded_response(user_query: str) -> str:
