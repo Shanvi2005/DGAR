@@ -1,24 +1,28 @@
 from dgar_core.db_connector import NEO4J_DB
 from datetime import datetime
 
-def get_temporal_context(entity_name: str) -> str:
+def get_temporal_context(entity_name: str, until_date: str | None = None) -> str:
     
     if NEO4J_DB is None:
         return "ERROR: Database connection failed."
 
     cypher_query = """
     MATCH (s)-[r]->(o)
-    WHERE s.name = $name OR o.name = $name
+    WHERE (s.name = $name OR o.name = $name)
     AND r.timestamp IS NOT NULL
-    RETURN s.name AS source, 
-           type(r) AS relationship, 
-           o.name AS target, 
-           toString(r.timestamp) AS date
+    """ + (
+        "AND r.timestamp <= date($until_date)\n" if until_date else ""
+    ) + """
+    RETURN s.name AS source,
+        type(r) AS relationship,
+        o.name AS target,
+        toString(r.timestamp) AS date
     ORDER BY r.timestamp ASC
     """
     
     parameters = {"name": entity_name}
-    
+    if until_date:
+        parameters["until_date"] = until_date
     results = NEO4J_DB.execute_query(cypher_query, parameters)
 
     if not results:
