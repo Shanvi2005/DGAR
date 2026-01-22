@@ -1,209 +1,187 @@
-**<span style="text-decoration:underline;">DGAR: Directed Graph-Augmented Retrieval (Temporal RAG System)</span>**
+# DGAR: Directed Graph-Augmented Retrieval
 
-A Temporal Retrieval-Augmented Generation (T-RAG) framework using a Directed Knowledge Graph (DGAR) to reduce LLM hallucination and temporal drift through chronological fact grounding.
+### A Temporal Retrieval-Augmented Generation (T-RAG) System
 
+DGAR is a **Temporal Retrieval-Augmented Generation (T-RAG)** framework that reduces Large Language Model (LLM) hallucinations by enforcing **chronological fact grounding** using a **directed, time-stamped knowledge graph**.
 
-<table>
-  <tr>
-   <td>Status
-   </td>
-   <td>Data Scale
-   </td>
-   <td>Deployment
-   </td>
-   <td>License
-   </td>
-  </tr>
-  <tr>
-   <td>Operational
-   </td>
-   <td>9 time-stamped entities
-   </td>
-   <td>Dockerized (Neo4j + Gemini API)
-   </td>
-   <td>MIT
-   </td>
-  </tr>
-</table>
+Instead of asking the LLM to reason about timelines implicitly, DGAR **pushes temporal reasoning into the retrieval layer**, ensuring that answers are generated only from **time-ordered, verified facts**.
 
+---
 
-**<span style="text-decoration:underline;">1. Problem and Motivation</span>**
+## 1. Problem & Motivation
 
-**<span style="text-decoration:underline;">1.1 Issue: Temporal Drift in LLMs</span>**
+### 1.1 Temporal Drift in Standard RAG
 
-Standard RAG pipelines rely on semantic embeddings. They fail to reason over time-sensitive or evolving information.
+Most RAG systems retrieve documents based on **semantic similarity**, not **time validity**. As a result, LLMs often merge facts from different periods, leading to **timeline hallucinations**.
 
-Example failure:
+**Example failure:**
 
-“Who was TechCorp’s CEO before 2024?”
+> *Who was TechCorp’s CEO before 2024?*
 
-A baseline LLM often merges outdated and new facts, hallucinating a single timeline.
+A baseline LLM or standard RAG pipeline may combine historical and future facts and hallucinate a single, incorrect answer.
 
-**<span style="text-decoration:underline;">1.2 DGAR Objective: Chronological Grounding</span>**
+---
 
-DGAR enforces temporal consistency through:
+### 1.2 DGAR Objective: Chronological Grounding
 
+DGAR eliminates temporal ambiguity by enforcing:
 
+* **Directed Graph ETL** — Extracts entities and relationships with explicit timestamps
+* **Temporal Graph Retrieval** — Retrieves and orders facts chronologically *before* generation
+* **Grounded Generation** — LLM answers strictly using time-sorted graph context
 
-* <span style="text-decoration:underline;">Directed Graph ETL</span>: Extracts entities and relations with precise timestamps.
-* <span style="text-decoration:underline;">Temporal Retrieval</span>: Orders multi-hop relations chronologically before generation.
-* <span style="text-decoration:underline;">Grounded Response</span>: LLM answers only using time-sorted graph context, reducing ambiguity.
+---
 
-**<span style="text-decoration:underline;">2. System Design Overview</span>**
+## 2. System Overview
 
-**<span style="text-decoration:underline;">2.1 Architecture Diagram</span>**
+### 2.1 High-Level Architecture
 
-Raw Corpus → Extraction Engine → Temporal KG (Neo4j)
+```
+Raw Text Corpus
+        ↓
+LLM-based Structured Extraction
+        ↓
+Temporal Knowledge Graph (Neo4j)
+        ↓
+Chronologically Ordered Retrieval
+        ↓
+Grounded LLM Generation
+```
 
-                    ↓
+---
 
-              Retrieval Engine
+### 2.2 Core Components
 
-                    ↓
+| Component         | Technology         | Purpose                                                      |
+| ----------------- | ------------------ | ------------------------------------------------------------ |
+| Knowledge Graph   | Neo4j (Dockerized) | Stores entities and **time-stamped, directed relationships** |
+| Extraction Engine | Local LLM (Ollama) | Converts raw text into structured JSON triplets              |
+| Validation Layer  | Python             | Filters malformed or implausible LLM outputs                 |
+| Retrieval Engine  | Python + Neo4j     | Performs **temporal traversal and sorting**                  |
+| Generator         | Local LLM (Ollama) | Generates answers **strictly grounded** in retrieved facts   |
 
-           Chronologically Ordered Context
+---
 
-                    ↓
+## 3. Knowledge Representation
 
-                 LLM (Gemini)
+Each fact is stored as a **directed relationship with a timestamp**:
 
-**<span style="text-decoration:underline;">2.2 Module and Data Flow</span>**
+```
+(Person) -[APPOINTED {timestamp}]-> (Company)
+```
 
+This design allows multiple historical states to coexist without overwriting each other.
 
-<table>
-  <tr>
-   <td>Component
-   </td>
-   <td>Technology
-   </td>
-   <td>Path
-   </td>
-   <td>Function
-   </td>
-  </tr>
-  <tr>
-   <td>Knowledge Graph
-   </td>
-   <td>Neo4j(Docker)
-   </td>
-   <td>N/A
-   </td>
-   <td>Stores entities (`Person`, `Company`) and timestamped edges (`APPOINTED`, `FOUNDED`).
-   </td>
-  </tr>
-  <tr>
-   <td>Extraction Engine
-   </td>
-   <td>Gemini 2.5 Flash 
-   </td>
-   <td>Knowledge_Graph_ETL/extractor.py
-   </td>
-   <td>Converts text corpus → JSON triplets (`[Subject, Type, Relation, Object, Type, Timestamp]`).
-   </td>
-  </tr>
-  <tr>
-   <td>Retrieval Engine
-   </td>
-   <td>Python, Neo4j Driver
-   </td>
-   <td>DGAR_Retrieval_Engine/dgar_logic.py
-   </td>
-   <td>Performs temporal traversal and sorts results (`ORDER BY timestamp ASC`).
-   </td>
-  </tr>
-  <tr>
-   <td>Generator 
-   </td>
-   <td> Gemini 2.5 Flash
-   </td>
-   <td>DGAR_Retrieval_Engine/retriever.py
-   </td>
-   <td>Produces a final grounded answer from ordered facts.
-   </td>
-  </tr>
-</table>
+---
 
+## 4. Core Temporal Retrieval Logic
 
-**<span style="text-decoration:underline;">3. Core Retrieval Logic (Cypher Query)</span>**
+DGAR retrieves facts involving a queried entity and orders them **chronologically**:
 
-// Chronologically constrained entity retrieval
-
+```cypher
 MATCH (s)-[r]->(o)
-
 WHERE (s.name = $entity OR o.name = $entity)
-
-  AND EXISTS(r.timestamp)
-
-RETURN s.name AS source,
-
-       type(r) AS relation,
-
-       o.name AS target,
-
-       toString(r.timestamp) AS date
-
+  AND r.timestamp IS NOT NULL
+RETURN
+  s.name AS source,
+  type(r) AS relationship,
+  o.name AS target,
+  toString(r.timestamp) AS date
 ORDER BY r.timestamp ASC;
+```
 
-**<span style="text-decoration:underline;">4. Deployment</span>**
+This guarantees that the LLM always receives a **linear, time-consistent history**.
 
-Prerequisites: Docker Desktop, Python ≥3.9
+---
 
-**Steps:**
+## 5. Grounded Generation
 
-git clone https://github.com/Shanvi2005/DGAR.git
+The retrieved temporal context is injected into a **constrained prompt** that:
 
-cd DGAR-Project
+* Forbids use of external knowledge
+* Allows explicit acknowledgement of missing information
+* Prevents timeline reconstruction by the model
 
-cp .env.example .env  # Add GEMINI_API_KEY
+If sufficient information does not exist, the system **fails safely** instead of hallucinating.
 
-docker-compose up -d  # Launch Neo4j container
+---
 
-python Knowledge_Graph_ETL/extractor.py  # Run data ingestion
+## 6. Verification Example
 
-python DGAR_Retrieval_Engine/retriever.py  # Test retrieval and generation
+**Query**
 
-**<span style="text-decoration:underline;">5. Verification Example</span>**
+> *What was TechCorp’s main product before Project Nova, and who was the CEO in 2024?*
 
-**Query:**
+**DGAR Output**
 
-What was TechCorp's main product before Project Nova, and who was the CEO in 2024?
+> Based on time-stamped graph data:
+>
+> * Before Project Nova (2024-03-15), TechCorp’s main product was **ProductX**
+> * **Marcus Jones** became CEO on **2025-02-10**
+> * **No CEO is listed for 2024**
 
-**DGAR Output:**
+---
 
-Based only on time-stamped graph data: Before Project Nova (2024-03-15), TechCorp's main product was ProductX. Marcus Jones became CEO on 2025-02-10. No CEO listed for 2024.
+## 7. Repository Structure
 
-**<span style="text-decoration:underline;">6. Planned Enhancements</span>**
-
-Quantitative evaluation: accuracy vs. baseline RAG
-
-Temporal conflict detection for overlapping timestamps
-
-Vector + Graph hybrid retrieval
-
-Integration with LangChain for modular testing
-
-Auto-validation of extracted triplets
-
-**<span style="text-decoration:underline;">7. Repository Structure</span>**
-
-DGAR-Project/
-
-├── Knowledge_Graph_ETL/
-
-│   └── extractor.py
-
-├── DGAR_Retrieval_Engine/
-
-│   ├── dgar_logic.py
-
-│   └── retriever.py
-
+```
+DGAR/
+├── data/
+│   └── temporal_corpus.txt
+├── dgar_core/
+│   ├── db_connector.py
+│   ├── extractor.py
+│   └── validator.py
+├── dgar_Retrieval_Engine/
+│   └── dgar_logic.py
+├── llm_interface/
+│   └── generator.py
 ├── docker-compose.yml
-
-├── .env.example
-
+├── main_ingestion.py
 └── README.md
+```
 
-**<span style="text-decoration:underline;">8. License</span>**
+---
+
+## 8. Deployment
+
+### Prerequisites
+
+* Python ≥ 3.9
+* Docker Desktop
+* Ollama
+
+### Steps
+
+```bash
+git clone https://github.com/Shanvi2005/DGAR.git
+cd DGAR
+
+docker-compose up -d        # Start Neo4j
+python main_ingestion.py    # Build temporal knowledge graph
+```
+
+---
+
+## 9. Key Design Decisions
+
+* Temporal reasoning is handled **before generation**, not inside the LLM
+* All relationships require explicit timestamps
+* LLM outputs are validated and sanitized before ingestion
+* System prioritizes **correctness and transparency** over forced answers
+
+---
+
+## 10. Limitations & Future Work
+
+* Quantitative evaluation against baseline RAG
+* Temporal conflict detection for overlapping facts
+* Vector + graph hybrid retrieval
+* Support for time ranges (before / after / during)
+* Automated extraction quality scoring
+
+---
+
+## 11. License
 
 MIT License © 2025 Shanvi
