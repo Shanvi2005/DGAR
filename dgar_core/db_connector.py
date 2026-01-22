@@ -7,7 +7,7 @@ import os
 load_dotenv()
 
 URI = os.getenv("NEO4J_URI")
-USERNAME = os.getenv("NEO4J_USERNAME")
+USERNAME = os.getenv("NEO4J_USER")
 PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 class Neo4jConnector:
